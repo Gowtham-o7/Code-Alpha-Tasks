@@ -1,0 +1,41 @@
+# suricata.yaml — KEY SECTIONS ONLY
+# Merge these values into /etc/suricata/suricata.yaml (don't replace the whole file).
+
+vars:
+  address-groups:
+    HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"
+    EXTERNAL_NET: "!$HOME_NET"
+
+af-packet:
+  - interface: eth0          # <-- change to your monitoring interface
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+
+default-rule-path: /etc/suricata/rules
+rule-files:
+  - suricata.rules           # default Emerging Threats ruleset (via suricata-update)
+  - custom.rules             # our custom rules (this project)
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert:
+            payload: yes
+            payload-printable: yes
+            packet: yes
+            http-body: yes
+            tagged-packets: yes
+        - http
+        - dns
+        - tls
+        - flow
+  - fast:
+      enabled: yes
+      filename: fast.log
+
+logging:
+  default-log-level: notice

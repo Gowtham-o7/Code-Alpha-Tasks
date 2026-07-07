@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NIDS Alert Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; background: #0f1117; color: #e6e6e6; margin: 0; padding: 24px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .subtitle { color: #8a8f98; margin-bottom: 24px; font-size: 0.9rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+  .card { background: #181b24; border: 1px solid #2a2d38; border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: 0.95rem; color: #c2c6d0; margin: 0 0 12px; }
+  .stat { font-size: 2.2rem; font-weight: 700; color: #ff5c5c; }
+  canvas { max-height: 280px; }
+</style>
+</head>
+<body>
+  <h1>Network Intrusion Detection Dashboard</h1>
+  <div class="subtitle">Live summary of Suricata alerts</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Total Alerts</h2>
+      <div class="stat" id="totalAlerts">--</div>
+    </div>
+    <div class="card">
+      <h2>Top Signatures</h2>
+      <canvas id="sigChart"></canvas>
+    </div>
+    <div class="card">
+      <h2>Top Source IPs</h2>
+      <canvas id="srcChart"></canvas>
+    </div>
+    <div class="card">
+      <h2>Severity Breakdown</h2>
+      <canvas id="sevChart"></canvas>
+    </div>
+  </div>
+
+<script>
+async function loadData() {
+  const res = await fetch('/api/summary');
+  const data = await res.json();
+
+  document.getElementById('totalAlerts').textContent = data.total_alerts;
+
+  new Chart(document.getElementById('sigChart'), {
+    type: 'bar',
+    data: {
+      labels: data.top_signatures.map(s => s[0]),
+      datasets: [{ label: 'Count', data: data.top_signatures.map(s => s[1]), backgroundColor: '#ff5c5c' }]
+    },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+
+  new Chart(document.getElementById('srcChart'), {
+    type: 'bar',
+    data: {
+      labels: data.top_sources.map(s => s[0]),
+      datasets: [{ label: 'Count', data: data.top_sources.map(s => s[1]), backgroundColor: '#5c9eff' }]
+    },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+
+  new Chart(document.getElementById('sevChart'), {
+    type: 'doughnut',
+    data: {
+      labels: data.severity_breakdown.map(s => 'Severity ' + s[0]),
+      datasets: [{ data: data.severity_breakdown.map(s => s[1]), backgroundColor: ['#ff5c5c','#ffb84d','#5cff8f'] }]
+    }
+  });
+}
+loadData();
+setInterval(loadData, 10000);
+</script>
+</body>
+</html>

